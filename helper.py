@@ -88,5 +88,6 @@ def uniform_crossover(parent1, parent2):
 
     return offspring1, offspring2
 
-def bit_flip(chromosome, gene):
+def bit_flip(chromosome):
+    gene = random.randint(0, len(chromosome) - 1)
     chromosome.genes[gene] = not chromosome.genes[gene]
