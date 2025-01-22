@@ -48,15 +48,19 @@ class GA:
         while True:
 
             if iteration_tracker[iteration_level] != self.evals_before_pop_increase:
-                population = self.populations[keys[iteration_level]]
 
                 iteration_tracker[iteration_level] += 1
                 iteration_level = 0
+
             else:
+
                 iteration_tracker[iteration_level] = 0
                 iteration_level += 1
 
                 self.trim_populations()
+                if iteration_level == len(self.populations):
+                    self.increase_population()
+
                 iteration_tracker = {key: 0 for key in sorted(self.populations.keys())}
                 keys = list(iteration_tracker.keys())
 
