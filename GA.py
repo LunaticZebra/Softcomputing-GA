@@ -8,9 +8,9 @@ from Chromosome import Chromosome
 
 class GA:
 
-    def __init__(self,base_population_size: int,evals_before_pop_increase: int,
-                 tournament_size: float,num_of_iterations: int,crossover_chance: float,  mutation_chance: float,
-                 keep_m_best:int, replacement_rate: float,
+    def __init__(self, base_population_size: int, evals_before_pop_increase: int,
+                 tournament_size: float, num_of_iterations: int, crossover_chance: float, mutation_chance: float,
+                 keep_m_best: int, replacement_rate: float,
                  crossover_function: Callable[[list[int], list[int]], tuple[list[int], list[int]]],
                  mutation_function: Callable[[list[int]], None],
                  variables_num: int, clauses_num: int,
@@ -37,32 +37,38 @@ class GA:
 
         self.increase_population()
 
-
     def run_algorithm(self):
 
-        iteration_tracker = {key: 0 for key in sorted(self.populations.keys())} # Track the amount of iterations for each population, it is important that they are sorted
-        iteration_level = 0 # Currently evaluated population
-        keys = list(iteration_tracker.keys())
+        iteration_tracker = {key: 0 for key in sorted(
+            self.populations.keys())}  # Track the amount of iterations for each population, it is important that they are sorted
+        iteration_level = 0  # Currently evaluated population
+        keys = sorted(list(iteration_tracker.keys()))
         print(keys)
 
         while True:
 
-            if iteration_tracker[iteration_level] != self.evals_before_pop_increase:
+            # Because the list of keys is sorted, we choose current population key this way
+            current_iteration_key = keys[iteration_level]
 
-                iteration_tracker[iteration_level] += 1
+            self.iterate(current_iteration_key)
+
+            # Check whether we should go iterate for a population with greater size or go back to level 0
+            if iteration_tracker[current_iteration_key] != self.evals_before_pop_increase:
+
+                iteration_tracker[current_iteration_key] += 1
                 iteration_level = 0
 
             else:
 
-                iteration_tracker[iteration_level] = 0
+                iteration_tracker[current_iteration_key] = 0
                 iteration_level += 1
 
-                self.trim_populations()
                 if iteration_level == len(self.populations):
+                    self.trim_populations()
                     self.increase_population()
 
-                iteration_tracker = {key: 0 for key in sorted(self.populations.keys())}
-                keys = list(iteration_tracker.keys())
+                    iteration_tracker = {key: 0 for key in sorted(self.populations.keys())}
+                    keys = sorted(list(iteration_tracker.keys()))
 
 
     def iterate(self, pop_key):
@@ -74,16 +80,15 @@ class GA:
             while parent1 == parent2:
                 parent2 = self.run_tournament(pop_key)
 
-            offspring1,offspring2 = parent1,parent2
+            offspring1, offspring2 = parent1, parent2
             if random.random() < self.crossover_chance:
-                offspring1,offspring2 = self.crossover_function(parent1.genes,parent2.genes)
+                offspring1, offspring2 = self.crossover_function(parent1.genes, parent2.genes)
 
             if random.random() < self.mutation_chance:
                 self.mutation_function(offspring1.genes)
                 self.mutation_function(offspring2.genes)
 
-            self.populations[pop_key][-2] = [offspring1,offspring2]
-
+            self.populations[pop_key][-2] = [offspring1, offspring2]
 
     def exchange_best_between_populations(self):
         best_chromosomes = []
@@ -92,7 +97,7 @@ class GA:
             shuffled = list(keys[:])
             random.shuffle(shuffled)
             # Check if any number remains in its original position
-            if all(original != shuffled[i] for i,original in enumerate(keys)):
+            if all(original != shuffled[i] for i, original in enumerate(keys)):
                 break
 
         # Acquire the best chromosome from each population and remove it from there
@@ -115,7 +120,6 @@ class GA:
         best_chromosome = tournament_contestants[0]
         best_fitness = tournament_contestants[0].fitness
 
-
         for i in range(1, self.num_of_iterations):
             chromosome_fitness = self.evaluated_chromosomes[best_chromosome].fitness
             if chromosome_fitness > best_fitness:
@@ -125,7 +129,7 @@ class GA:
 
     def increase_population(self):
         population = []
-        for i in range(self.base_pop_size**self.current_pop_power):
+        for i in range(self.base_pop_size ** self.current_pop_power):
             genes_seq = []
             for _ in range(self.variables_num):
                 genes_seq.append(random.choice([True, False]))
@@ -143,7 +147,6 @@ class GA:
         chromosome.fitness = fitness
         self.evaluated_chromosomes[chromosome] = fitness
 
-
     def evaluate_population(self, pop_power):
         total_fitness = 0
         best_fitness = 0
@@ -152,7 +155,6 @@ class GA:
                 best_fitness = chromosome.fitness
             total_fitness += chromosome.fitness
         return total_fitness, best_fitness
-
 
     def trim_populations(self):
         pop_powers = sorted(self.populations.keys())
@@ -165,6 +167,6 @@ class GA:
                 if curr_pop_fitness >= pop_fitness and curr_best_fitness >= best_fitness:
                     pops_to_delete.add(pop_powers[j])
 
-        self.populations = {key: value for key,value in self.populations.items() if key not in pops_to_delete}
+        self.populations = {key: value for key, value in self.populations.items() if key not in pops_to_delete}
 
         return pops_to_delete
