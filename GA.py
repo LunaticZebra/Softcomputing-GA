@@ -1,3 +1,4 @@
+import csv
 import math
 import random
 from typing import Callable
@@ -8,24 +9,22 @@ from Chromosome import Chromosome
 
 class GA:
 
-    def __init__(self, base_population_size: int, evals_before_pop_increase: int,
-                 tournament_size: float, num_of_iterations: int, crossover_chance: float, mutation_chance: float,
-                 keep_m_best: int, replacement_rate: float,
-                 crossover_function: Callable[[list[int], list[int]], tuple[list[int], list[int]]],
-                 mutation_function: Callable[[list[int]], None],
+    def __init__(self, base_population_size: int, evals_before_pop_increase: int, iterations_per_exchange: int,
+                 tournament_size: float, crossover_chance: float, mutation_chance: float, crossover_function: Callable[[list[bool], list[bool]], tuple[list[bool], list[bool]]],
+                 mutation_function: Callable[[list[bool]], None], no_improvement_iterations: int,
                  variables_num: int, clauses_num: int,
                  clauses: list[list[int]]):
 
         self.base_pop_size = base_population_size
         self.evals_before_pop_increase = evals_before_pop_increase
+        self.iterations_per_exchange = iterations_per_exchange
         self.t_size = tournament_size
-        self.num_of_iterations = num_of_iterations
         self.crossover_chance = crossover_chance
         self.mutation_chance = mutation_chance
         self.crossover_function = crossover_function
         self.mutation_function = mutation_function
-        self.elitism = keep_m_best
-        self.replacement_rate = replacement_rate
+        self.max_no_improv = no_improvement_iterations
+        self.best_chromosomes = {}
 
         self.clauses = clauses
         self.variables_num = variables_num
@@ -33,9 +32,15 @@ class GA:
 
         self.populations = {}
         self.evaluated_chromosomes = {}
-        self.current_pop_power = 1
+        self.current_max_pop_key = 1
+
+        self.iteration_number = 0
 
         self.increase_population()
+
+        self.file = open("results.csv", mode="w", newline='')
+        self.writer = csv.writer(self.file)
+        self.writer.writerow(["Iteration","Best fitness","Average Fitness","Worst Fitness"])
 
     def run_algorithm(self):
 
@@ -43,15 +48,20 @@ class GA:
             self.populations.keys())}  # Track the amount of iterations for each population, it is important that they are sorted
         iteration_level = 0  # Currently evaluated population
         keys = sorted(list(iteration_tracker.keys()))
-        print(keys)
 
-        while True:
+        no_improve = 0
 
+        best_chromosome = max(self.best_chromosomes.values(), key= lambda x : x.fitness)
+
+        while no_improve < self.max_no_improv:
+            self.iteration_number += 1
             # Because the list of keys is sorted, we choose current population key this way
             current_iteration_key = keys[iteration_level]
 
             self.iterate(current_iteration_key)
-
+            if self.iteration_number % self.iterations_per_exchange == 0:
+                print("Exchanging between populations, iteration ", self.iteration_number)
+                self.exchange_best_between_populations()
             # Check whether we should go iterate for a population with greater size or go back to level 0
             if iteration_tracker[current_iteration_key] != self.evals_before_pop_increase:
 
@@ -70,28 +80,85 @@ class GA:
                     iteration_tracker = {key: 0 for key in sorted(self.populations.keys())}
                     keys = sorted(list(iteration_tracker.keys()))
 
+                    iteration_level  = len(self.populations) - 1
+
+            curr_best_chromosome = max(self.best_chromosomes.values(), key= lambda x : x.fitness)
+
+            if curr_best_chromosome.fitness <= best_chromosome.fitness:
+                no_improve += 1
+
+            else:
+                best_chromosome = curr_best_chromosome
+                no_improve = 0
+
+                if best_chromosome.fitness == self.clauses_num:
+                    print("Found solution")
+                    break
+
+            self._write_row(self._get_best_avg_worst_overall_fitness())
+
+        print(f"Clauses to satisfy = {len(self.clauses)}")
+        print(f"Clauses satisfied = {best_chromosome.fitness}")
+        print(f"Best chromosome = {best_chromosome.genes}")
+        print(self.populations.keys())
+        self._close_file()
 
     def iterate(self, pop_key):
-        for i in range(self.evals_before_pop_increase):
 
-            parent1 = self.run_tournament(pop_key)
+        parent1 = self.run_tournament(pop_key)
+        parent2 = self.run_tournament(pop_key)
+
+        while parent1 == parent2:
             parent2 = self.run_tournament(pop_key)
 
-            while parent1 == parent2:
-                parent2 = self.run_tournament(pop_key)
+        offspring1 = Chromosome(parent1.genes[:], parent1.fitness)
+        offspring2 = Chromosome(parent2.genes[:], parent2.fitness)
 
-            offspring1, offspring2 = parent1, parent2
-            if random.random() < self.crossover_chance:
-                offspring1, offspring2 = self.crossover_function(parent1.genes, parent2.genes)
+        if random.random() < self.crossover_chance:
+            offspring1_genes, offspring2_genes = self.crossover_function(parent1.genes, parent2.genes)
+            offspring1 = Chromosome(offspring1_genes)
+            offspring2 = Chromosome(offspring2_genes)
 
-            if random.random() < self.mutation_chance:
-                self.mutation_function(offspring1.genes)
-                self.mutation_function(offspring2.genes)
+            self.evaluate_chromosome(offspring1)
+            self.evaluate_chromosome(offspring2)
 
-            self.populations[pop_key][-2] = [offspring1, offspring2]
+
+        if random.random() < self.mutation_chance:
+            offspring1_mutated_genes, offspring2_mutated_genes = offspring1.genes[:], offspring2.genes[:]
+            self.mutation_function(offspring1_mutated_genes)
+            self.mutation_function(offspring2_mutated_genes)
+
+            mutated_offspring1 = Chromosome(offspring1_mutated_genes)
+            mutated_offspring2 = Chromosome(offspring1_mutated_genes)
+
+            self.evaluate_chromosome(mutated_offspring1)
+            self.evaluate_chromosome(mutated_offspring2)
+
+            if offspring1.fitness <= mutated_offspring1.fitness:
+                offspring1 = mutated_offspring1
+            if offspring2.fitness <= mutated_offspring2.fitness:
+                offspring2 = mutated_offspring2
+
+
+        # replace 2 chromosomes of the lowest fitness with new offspring
+        min_chromosome1 = min(self.populations[pop_key],key=lambda x: x.fitness)
+        chromosome1_fitness = min_chromosome1.fitness
+        min_chromosome1.fitness = math.inf
+        min_chromosome2 = min(self.populations[pop_key],key=lambda x: x.fitness)
+        min_chromosome1.fitness = chromosome1_fitness
+
+        # possibility -> do not remove chromosomes if they are better than newly created offspring
+        if offspring1.fitness > min_chromosome1.fitness:
+            self.populations[pop_key].remove(min_chromosome1)
+            self.populations[pop_key].append(offspring1)
+
+        if offspring2.fitness > min_chromosome2.fitness:
+            self.populations[pop_key].remove(min_chromosome2)
+            self.populations[pop_key].append(offspring2)
 
     def exchange_best_between_populations(self):
         best_chromosomes = []
+        # Shuffle the keys so their position are different
         while True:
             keys = list(self.populations.keys())
             shuffled = list(keys[:])
@@ -103,33 +170,33 @@ class GA:
         # Acquire the best chromosome from each population and remove it from there
         for i in range(len(keys)):
             population = self.populations[keys[i]]
-            best_chromosome = max(population, key=lambda x: x.fitness)
+            best_chromosome = self.best_chromosomes[keys[i]]
             population.remove(best_chromosome)
             best_chromosomes.append(best_chromosome)
 
-        # Add the chromosomes accordingly to different populations
         for i in range(len(keys)):
             self.populations[shuffled[i]].append(best_chromosomes[i])
+            self.best_chromosomes[shuffled[i]] = best_chromosomes[i]
 
     def run_tournament(self, pop_key: int) -> Chromosome:
         population = self.populations[pop_key]
-        tournament_size = math.floor(self.t_size * len(population))
+        tournament_size = math.ceil(self.t_size * len(population))
 
         tournament_contestants = random.sample(population, tournament_size)
 
         best_chromosome = tournament_contestants[0]
         best_fitness = tournament_contestants[0].fitness
 
-        for i in range(1, self.num_of_iterations):
-            chromosome_fitness = self.evaluated_chromosomes[best_chromosome].fitness
-            if chromosome_fitness > best_fitness:
+        for i in range(1, len(tournament_contestants)):
+            if tournament_contestants[i].fitness > best_fitness:
                 best_chromosome = tournament_contestants[i]
 
         return best_chromosome
 
+
     def increase_population(self):
         population = []
-        for i in range(self.base_pop_size ** self.current_pop_power):
+        for i in range(self.base_pop_size *  2 ** self.current_max_pop_key):
             genes_seq = []
             for _ in range(self.variables_num):
                 genes_seq.append(random.choice([True, False]))
@@ -138,35 +205,73 @@ class GA:
             population.append(chromosome)
             self.evaluate_chromosome(chromosome)
 
-        self.populations[self.current_pop_power] = population
-        self.current_pop_power += 1
+        self.populations[self.current_max_pop_key] = population
+        self.evaluate_population(self.current_max_pop_key)
+        print(f"Iteration: {self.iteration_number}, population of size {len(self.populations[self.current_max_pop_key])} created")
+        self.current_max_pop_key += 1
 
     def evaluate_chromosome(self, chromosome: Chromosome):
 
-        fitness = helper.evaluate_formula(self.clauses, chromosome.genes)
-        chromosome.fitness = fitness
-        self.evaluated_chromosomes[chromosome] = fitness
+        if chromosome not in self.evaluated_chromosomes:
+            fitness = helper.evaluate_formula(self.clauses, chromosome.genes)
+            self.evaluated_chromosomes[chromosome] = fitness
 
-    def evaluate_population(self, pop_power):
+        else:
+            fitness = self.evaluated_chromosomes[chromosome]
+
+        chromosome.fitness = fitness
+
+       # print(f"{chromosome}  Chromosome evaluated: {chromosome.fitness}")
+
+    def evaluate_population(self,pop_key):
         total_fitness = 0
         best_fitness = 0
-        for chromosome in self.populations[pop_power]:
+        best_chromosome = None
+        for chromosome in self.populations[pop_key]:
             if best_fitness < chromosome.fitness:
                 best_fitness = chromosome.fitness
+                best_chromosome = chromosome
             total_fitness += chromosome.fitness
+
+        self.best_chromosomes[pop_key] = best_chromosome
+
         return total_fitness, best_fitness
 
     def trim_populations(self):
-        pop_powers = sorted(self.populations.keys())
+        pop_keys = sorted(self.populations.keys())
         pops_to_delete = set()
-        for i in range(1, len(pop_powers)):
-            curr_pop_fitness, curr_best_fitness = self.evaluate_population(pop_powers[i])
+        for i in range(1, len(pop_keys)):
+            curr_pop_fitness, curr_best_fitness = self.evaluate_population(pop_keys[i])
             for j in range(0, i):
-                pop_fitness, best_fitness = self.evaluate_population(pop_powers[j])
+                pop_fitness, best_fitness = self.evaluate_population(pop_keys[j])
 
                 if curr_pop_fitness >= pop_fitness and curr_best_fitness >= best_fitness:
-                    pops_to_delete.add(pop_powers[j])
+                    pops_to_delete.add(pop_keys[j])
+                    print(f"Trimming population {pop_keys[j]}")
 
         self.populations = {key: value for key, value in self.populations.items() if key not in pops_to_delete}
+        self.best_chromosomes = {key: value for key, value in self.best_chromosomes.items() if key not in pops_to_delete}
 
         return pops_to_delete
+
+    def _get_best_avg_worst_overall_fitness(self):
+        best_fitness = max(self.best_chromosomes.values(), key= lambda x : x.fitness).fitness
+        worst_fitnesses = []
+        avg_fitness = 0
+        for pop in self.populations.keys():
+            worst_fitnesses.append(min(self.populations[pop], key=lambda x: x.fitness).fitness)
+            worst_fitnesses.append(min(self.populations[pop], key=lambda x: x.fitness).fitness)
+            avg_fitness += (self.evaluate_population(pop)[0])/len(self.populations[pop])
+
+        avg_fitness /= len(self.populations)
+        worst_fitness = min(worst_fitnesses)
+
+        return best_fitness, avg_fitness, worst_fitness
+
+    def _write_row(self, row: tuple[int, int, float]):
+        row_to_write = [self.iteration_number, row[0], row[1], row[2]]
+        self.writer.writerow(row_to_write)
+
+    def _close_file(self):
+        if self.file:
+            self.file.close()
