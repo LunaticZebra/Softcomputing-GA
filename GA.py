@@ -61,6 +61,7 @@ class GA:
             current_iteration_key = keys[iteration_level]
 
             self.iterate(current_iteration_key)
+
             if self.iteration_number % self.iterations_per_exchange == 0:
                 if not self.quiet:
                     print("Exchanging between populations, iteration ", self.iteration_number)
@@ -153,6 +154,7 @@ class GA:
         min_chromosome2 = min(self.populations[pop_key],key=lambda x: x.fitness)
         min_chromosome1.fitness = chromosome1_fitness
 
+
         # possibility -> do not remove chromosomes if they are better than newly created offspring
         if offspring1.fitness > min_chromosome1.fitness:
             self.populations[pop_key].remove(min_chromosome1)
@@ -162,8 +164,12 @@ class GA:
             self.populations[pop_key].remove(min_chromosome2)
             self.populations[pop_key].append(offspring2)
 
+
+        self.evaluate_population(pop_key)
+
     def exchange_best_between_populations(self):
-        best_chromosomes = []
+        chromosomes_to_exchange = []
+        # {1: asdad, 2: asdasd}
         # Shuffle the keys so their position are different
         while True:
             keys = list(self.populations.keys())
@@ -174,15 +180,20 @@ class GA:
                 break
 
         # Acquire the best chromosome from each population and remove it from there
+
         for i in range(len(keys)):
             population = self.populations[keys[i]]
             best_chromosome = self.best_chromosomes[keys[i]]
+
+            print(len(population))
             population.remove(best_chromosome)
-            best_chromosomes.append(best_chromosome)
+
+            chromosomes_to_exchange.append(best_chromosome)
 
         for i in range(len(keys)):
-            self.populations[shuffled[i]].append(best_chromosomes[i])
-            self.best_chromosomes[shuffled[i]] = best_chromosomes[i]
+
+            self.populations[shuffled[i]].append(chromosomes_to_exchange[i])
+            self.best_chromosomes[shuffled[i]] = chromosomes_to_exchange[i]
 
     def run_tournament(self, pop_key: int) -> Chromosome:
         population = self.populations[pop_key]
