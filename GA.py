@@ -13,7 +13,8 @@ class GA:
                  tournament_size: float, crossover_chance: float, mutation_chance: float, crossover_function: Callable[[list[bool], list[bool]], tuple[list[bool], list[bool]]],
                  mutation_function: Callable[[list[bool]], None], no_improvement_iterations: int,
                  variables_num: int, clauses_num: int,
-                 clauses: list[list[int]]):
+                 clauses: list[list[int]],
+                 quiet: bool = False):
 
         self.base_pop_size = base_population_size
         self.evals_before_pop_increase = evals_before_pop_increase
@@ -25,6 +26,7 @@ class GA:
         self.mutation_function = mutation_function
         self.max_no_improv = no_improvement_iterations
         self.best_chromosomes = {}
+        self.quiet = quiet
 
         self.clauses = clauses
         self.variables_num = variables_num
@@ -60,7 +62,8 @@ class GA:
 
             self.iterate(current_iteration_key)
             if self.iteration_number % self.iterations_per_exchange == 0:
-                print("Exchanging between populations, iteration ", self.iteration_number)
+                if not self.quiet:
+                    print("Exchanging between populations, iteration ", self.iteration_number)
                 self.exchange_best_between_populations()
             # Check whether we should go iterate for a population with greater size or go back to level 0
             if iteration_tracker[current_iteration_key] != self.evals_before_pop_increase:
@@ -92,16 +95,19 @@ class GA:
                 no_improve = 0
 
                 if best_chromosome.fitness == self.clauses_num:
-                    print("Found solution")
+                    if not self.quiet:
+                        print("Found solution")
                     break
 
             self._write_row(self._get_best_avg_worst_overall_fitness())
 
-        print(f"Clauses to satisfy = {len(self.clauses)}")
-        print(f"Clauses satisfied = {best_chromosome.fitness}")
-        print(f"Best chromosome = {best_chromosome.genes}")
-        print(self.populations.keys())
+        if not self.quiet:
+            print(f"Clauses to satisfy = {len(self.clauses)}")
+            print(f"Clauses satisfied = {best_chromosome.fitness}")
+            print(f"Best chromosome = {best_chromosome.genes}")
+            print(self.populations.keys())
         self._close_file()
+        return best_chromosome.fitness, self.iteration_number
 
     def iterate(self, pop_key):
 
@@ -207,7 +213,8 @@ class GA:
 
         self.populations[self.current_max_pop_key] = population
         self.evaluate_population(self.current_max_pop_key)
-        print(f"Iteration: {self.iteration_number}, population of size {len(self.populations[self.current_max_pop_key])} created")
+        if not self.quiet:
+            print(f"Iteration: {self.iteration_number}, population of size {len(self.populations[self.current_max_pop_key])} created")
         self.current_max_pop_key += 1
 
     def evaluate_chromosome(self, chromosome: Chromosome):
@@ -247,7 +254,8 @@ class GA:
 
                 if curr_pop_fitness >= pop_fitness and curr_best_fitness >= best_fitness:
                     pops_to_delete.add(pop_keys[j])
-                    print(f"Trimming population {pop_keys[j]}")
+                    if not self.quiet:
+                        print(f"Trimming population {pop_keys[j]}")
 
         self.populations = {key: value for key, value in self.populations.items() if key not in pops_to_delete}
         self.best_chromosomes = {key: value for key, value in self.best_chromosomes.items() if key not in pops_to_delete}
