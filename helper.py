@@ -96,6 +96,8 @@ def uniform_crossover(parent1, parent2) -> tuple[list[bool], list[bool]]:
 
     return offspring1, offspring2
 
+
 def bit_flip(genes_sequence):
     gene = random.randint(0, len(genes_sequence) - 1)
     genes_sequence[gene] = not genes_sequence[gene]
+
